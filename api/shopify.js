@@ -1,15 +1,14 @@
-// api/shopify.js  —  Vercel Serverless Function
+// api/shopify.js — Vercel Serverless Function
+// Uses URL-embedded auth — most reliable for Shopify legacy custom apps
+
 const STORE   = process.env.SHOPIFY_STORE;
 const API_KEY = process.env.SHOPIFY_API_KEY;
 const SECRET  = process.env.SHOPIFY_API_SECRET;
 const API_VER = '2025-01';
-const BASE    = `https://${STORE}/admin/api/${API_VER}`;
 
-// Basic Auth for Shopify legacy custom apps
-const AUTH_HEADERS = {
-  'Authorization': 'Basic ' + Buffer.from(`${API_KEY}:${SECRET}`).toString('base64'),
-  'Content-Type': 'application/json',
-};
+// Embed credentials directly in the base URL — works for all legacy apps
+const BASE = `https://${API_KEY}:${SECRET}@${STORE}/admin/api/${API_VER}`;
+const HEADERS = { 'Content-Type': 'application/json' };
 
 const _cache = {};
 function fromCache(key) { const e = _cache[key]; return e && Date.now() < e.exp ? e.data : null; }
@@ -18,7 +17,7 @@ function toCache(key, data, ttl = 300_000) { _cache[key] = { data, exp: Date.now
 async function shopifyGet(path, params = {}) {
   const url = new URL(`${BASE}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { headers: AUTH_HEADERS });
+  const res = await fetch(url.toString(), { headers: HEADERS });
   if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
   return res.json();
 }
@@ -30,7 +29,7 @@ async function shopifyAll(path, key, params = {}) {
     if (pageInfo) p.page_info = pageInfo;
     const url = new URL(`${BASE}${path}`);
     Object.entries(p).forEach(([k, v]) => url.searchParams.set(k, v));
-    const res  = await fetch(url.toString(), { headers: AUTH_HEADERS });
+    const res  = await fetch(url.toString(), { headers: HEADERS });
     if (!res.ok) throw new Error(`Shopify ${res.status}: ${await res.text()}`);
     const data = await res.json();
     results = results.concat(data[key] || []);
@@ -49,9 +48,9 @@ function extractSource(order) {
   const utm = order.utm_parameters;
   if (utm?.utm_source) {
     const s = utm.utm_source.toLowerCase();
-    if (s.includes('google'))                                         return 'Google';
+    if (s.includes('google'))                                               return 'Google';
     if (s.includes('facebook')||s.includes('instagram')||s.includes('meta')) return 'Meta';
-    if (s.includes('email')||s.includes('klaviyo'))                   return 'Email';
+    if (s.includes('email')||s.includes('klaviyo'))                         return 'Email';
     return utm.utm_source;
   }
   const ref = (order.referring_site || '').toLowerCase();
@@ -64,7 +63,13 @@ function extractSource(order) {
 
 async function handleHealth() {
   const { shop } = await shopifyGet('/shop.json');
-  return { status: 'ok', store: shop.name, currency: shop.currency, plan: shop.plan_name, domain: shop.domain };
+  return {
+    status: 'ok',
+    store: shop.name,
+    currency: shop.currency,
+    plan: shop.plan_name,
+    domain: shop.domain,
+  };
 }
 
 async function handleDashboard(days = 30) {
@@ -74,7 +79,8 @@ async function handleDashboard(days = 30) {
 
   const [ordersR, customersR, productsR, marketingR] = await Promise.allSettled([
     shopifyAll('/orders.json', 'orders', {
-      status: 'any', created_at_min: daysAgo(days),
+      status: 'any',
+      created_at_min: daysAgo(days),
       fields: 'id,order_number,created_at,total_price,financial_status,customer,source_name,referring_site,utm_parameters,line_items,shipping_address',
     }),
     shopifyAll('/customers.json', 'customers', {
@@ -178,7 +184,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (!STORE || !API_KEY || !SECRET) {
-    return res.status(500).json({ error: 'SHOPIFY_STORE, SHOPIFY_API_KEY or SHOPIFY_API_SECRET not set in environment variables.' });
+    return res.status(500).json({
+      error: 'Missing env vars: SHOPIFY_STORE, SHOPIFY_API_KEY, SHOPIFY_API_SECRET'
+    });
   }
 
   const type = req.query.type || 'dashboard';
