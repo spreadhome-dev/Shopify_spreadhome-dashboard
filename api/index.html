@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpreadHome — Analytics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#f5f4f0;--surface:#fff;--surface2:#f0efe9;--border:#e2e0d8;
+  --text:#1a1917;--text2:#6b6965;--text3:#9b9893;
+  --green:#008060;--green-light:#e8f5f0;
+  --amber:#b25f09;--amber-light:#fef3e2;
+  --red:#c0392b;--red-light:#fdf0ee;
+  --blue:#1a4e8c;--blue-light:#eaf1fb;
+  --purple:#5b3ea8;--purple-light:#f0ecfb;
+  --radius:10px;--radius-lg:14px;
+  font-size:15px;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#111110;--surface:#1c1c1a;--surface2:#252522;--border:#2e2e2b;
+  --text:#f0ede6;--text2:#9b9893;--text3:#6b6965;
+  --green-light:#0d2e22;--amber-light:#2a1d08;--red-light:#2a100d;
+  --blue-light:#0d1f35;--purple-light:#1e1433;
+}}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* ── Loading Screen ── */
+.loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;transition:opacity .4s;}
+.loading-screen.hidden{opacity:0;pointer-events:none;}
+.loading-logo{width:52px;height:52px;background:var(--green);border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:700;margin-bottom:20px;}
+.loading-text{font-size:15px;color:var(--text2);margin-bottom:6px;}
+.loading-sub{font-size:13px;color:var(--text3);}
+.loading-bar{width:200px;height:3px;background:var(--border);border-radius:2px;margin-top:20px;overflow:hidden;}
+.loading-fill{height:100%;background:var(--green);border-radius:2px;width:0%;transition:width .3s ease;}
+.error-screen{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:998;}
+.error-box{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--red);border-radius:var(--radius-lg);padding:32px 36px;max-width:480px;text-align:center;}
+.error-icon{font-size:32px;margin-bottom:16px;}
+.error-title{font-size:17px;font-weight:600;margin-bottom:8px;}
+.error-msg{font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px;}
+.error-code{font-family:'DM Mono',monospace;font-size:12px;background:var(--surface2);padding:10px 14px;border-radius:8px;color:var(--text3);text-align:left;margin-bottom:20px;}
+
+/* ── Topbar ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:200;}
+.topbar-left{display:flex;align-items:center;gap:24px;}
+.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;}
+.logo-mark{width:32px;height:32px;background:var(--green);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;}
+.nav-pill{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:4px;display:flex;gap:2px;}
+.nav-pill a{text-decoration:none;color:var(--text2);font-size:13px;padding:5px 12px;border-radius:6px;transition:all .15s;font-weight:500;}
+.nav-pill a.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.btn-ghost{background:none;border:1px solid var(--border);padding:6px 14px;border-radius:8px;font-size:13px;color:var(--text2);cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;transition:all .15s;}
+.btn-ghost:hover{border-color:var(--green);color:var(--green);}
+.btn-export{background:var(--blue);color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:6px;transition:opacity .15s;}
+.btn-export:hover{opacity:.85;}
+.api-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);}
+.api-dot{width:6px;height:6px;border-radius:50%;background:#e67700;}
+.api-dot.live{background:var(--green);}
+.api-dot.error{background:var(--red);}
+
+/* ── Filter Bar ── */
+.filter-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 32px;position:sticky;top:60px;z-index:190;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.filter-label{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;}
+.filter-select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 26px 6px 10px;font-size:13px;color:var(--text);font-family:'DM Sans',sans-serif;cursor:pointer;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%239b9893' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;transition:border-color .15s;}
+.filter-select:hover,.filter-select:focus{border-color:var(--green);}
+.filter-input{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--text);font-family:'DM Mono',monospace;outline:none;width:90px;transition:border-color .15s;}
+.filter-input:hover,.filter-input:focus{border-color:var(--green);}
+.filter-sep{width:1px;height:22px;background:var(--border);}
+.filter-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.chip{display:inline-flex;align-items:center;gap:5px;background:var(--blue-light);color:var(--blue);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;}
+.chip-x{cursor:pointer;opacity:.7;font-size:14px;line-height:1;}
+.chip-x:hover{opacity:1;}
+.filter-spacer{flex:1;}
+.filter-count{font-size:12px;color:var(--text3);white-space:nowrap;}
+.btn-clear{background:none;border:none;font-size:12px;color:var(--text3);cursor:pointer;font-family:'DM Sans',sans-serif;padding:4px 8px;border-radius:6px;transition:all .15s;}
+.btn-clear:hover{color:var(--red);background:var(--red-light);}
+
+/* ── Export Drawer ── */
+.export-drawer{background:var(--surface);border-bottom:2px solid var(--blue);overflow:hidden;max-height:0;transition:max-height .35s cubic-bezier(.4,0,.2,1);position:sticky;top:109px;z-index:180;}
+.export-drawer.open{max-height:420px;}
+.export-inner{padding:22px 32px 26px;}
+.export-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.export-title{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+.export-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3);font-family:'DM Sans',sans-serif;padding:4px 8px;border-radius:6px;transition:all .15s;}
+.export-close:hover{color:var(--text);background:var(--surface2);}
+.export-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;align-items:start;}
+@media(max-width:900px){.export-grid{grid-template-columns:1fr;}}
+.exp-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+.dataset-tabs,.format-tabs{display:flex;gap:6px;flex-wrap:wrap;}
+.dataset-tab,.format-tab{border:1px solid var(--border);background:var(--surface2);padding:6px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);transition:all .15s;font-family:'DM Sans',sans-serif;}
+.dataset-tab.active{border-color:var(--blue);background:var(--blue-light);color:var(--blue);}
+.format-tab.active{border-color:var(--green);background:var(--green-light);color:var(--green);}
+.col-picker{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;}
+.col-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);background:var(--surface2);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;color:var(--text2);transition:all .15s;user-select:none;}
+.col-pill.checked{border-color:var(--green);background:var(--green-light);color:var(--green);}
+.fmt-detail{margin-top:12px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);font-size:12px;color:var(--text3);line-height:1.6;}
+.export-footer{display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:18px;border-top:1px solid var(--border);}
+.export-preview{font-size:13px;color:var(--text2);flex:1;}
+.export-preview strong{color:var(--text);font-weight:600;}
+.btn-dl{background:var(--green);color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:6px;transition:opacity .15s;}
+.btn-dl:hover{opacity:.85;}
+.btn-dl-sec{background:none;border:1px solid var(--border);color:var(--text2);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+.btn-dl-sec:hover{border-color:var(--blue);color:var(--blue);}
+.dl-ok{display:none;font-size:13px;color:var(--green);font-weight:600;align-items:center;gap:5px;}
+.dl-ok.show{display:flex;}
+
+/* ── Page Layout ── */
+.page{max-width:1280px;margin:0 auto;padding:32px 32px 64px;}
+.page-header{margin-bottom:24px;display:flex;align-items:flex-end;justify-content:space-between;}
+.page-title{font-size:22px;font-weight:600;}
+.page-subtitle{font-size:14px;color:var(--text2);margin-top:4px;}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;}
+.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 22px;position:relative;overflow:hidden;}
+.metric-card::after{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,var(--green));}
+.metric-label{font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+.metric-value{font-size:28px;font-weight:600;letter-spacing:-.03em;line-height:1;font-family:'DM Mono',monospace;}
+.metric-delta{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:500;padding:3px 8px;border-radius:6px;margin-top:10px;}
+.delta-up{background:var(--green-light);color:var(--green);}
+.delta-down{background:var(--red-light);color:var(--red);}
+.metric-sub{font-size:12px;color:var(--text3);margin-top:4px;}
+.two-col{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:28px;}
+@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px 24px;}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.card-title{font-size:14px;font-weight:600;}
+.card-badge{font-size:11px;padding:3px 9px;border-radius:6px;font-weight:600;}
+.badge-green{background:var(--green-light);color:var(--green);}
+.badge-live{background:#e6f9f0;color:#007a5a;font-weight:700;}
+.chart-wrap{position:relative;height:220px;}
+.channel-list{display:flex;flex-direction:column;gap:10px;}
+.channel-row{display:flex;align-items:center;gap:10px;}
+.channel-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.channel-name{font-size:13px;flex:1;font-weight:500;}
+.channel-bar-wrap{flex:2;background:var(--surface2);border-radius:4px;height:6px;overflow:hidden;}
+.channel-bar{height:100%;border-radius:4px;transition:width .6s ease;}
+.channel-pct{font-size:12px;color:var(--text2);min-width:36px;text-align:right;font-family:'DM Mono',monospace;}
+.channel-rev{font-size:12px;color:var(--text3);min-width:76px;text-align:right;font-family:'DM Mono',monospace;}
+.products-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;}
+@media(max-width:700px){.products-row{grid-template-columns:1fr;}}
+.product-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.product-row:last-child{border-bottom:none;}
+.product-rank{font-size:11px;color:var(--text3);min-width:18px;font-weight:600;}
+.product-thumb{width:36px;height:36px;border-radius:7px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.product-info{flex:1;min-width:0;}
+.product-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.product-sku{font-size:11px;color:var(--text3);}
+.product-units{font-size:12px;color:var(--text2);margin-right:4px;}
+.product-rev{font-size:13px;font-weight:600;font-family:'DM Mono',monospace;}
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:28px;}
+.table-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border);}
+.table-header-left{display:flex;align-items:center;gap:12px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{padding:9px 20px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;background:var(--surface2);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;transition:color .15s;white-space:nowrap;}
+th:hover{color:var(--text);}
+th.sorted{color:var(--green);}
+td{padding:11px 20px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surface2);}
+.order-id{font-family:'DM Mono',monospace;color:var(--green);font-weight:500;}
+.order-source{display:inline-flex;align-items:center;font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600;}
+.status-pill{font-size:11px;padding:3px 9px;border-radius:6px;font-weight:600;}
+.status-paid{background:var(--green-light);color:var(--green);}
+.status-pending{background:var(--amber-light);color:var(--amber);}
+.status-refunded,.status-refund{background:var(--red-light);color:var(--red);}
+.amount{font-family:'DM Mono',monospace;font-weight:500;}
+.no-results{padding:40px 24px;text-align:center;color:var(--text3);font-size:14px;}
+.skeleton{background:linear-gradient(90deg,var(--surface2) 25%,var(--border) 50%,var(--surface2) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:6px;display:inline-block;}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+</style>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-logo">S</div>
+  <div class="loading-text" id="loadingText">Connecting to Shopify…</div>
+  <div class="loading-sub" id="loadingSub">Fetching your store data</div>
+  <div class="loading-bar"><div class="loading-fill" id="loadingFill"></div></div>
+</div>
+
+<!-- Error Screen -->
+<div class="error-screen" id="errorScreen">
+  <div class="error-box">
+    <div class="error-icon">⚠️</div>
+    <div class="error-title">Could not load Shopify data</div>
+    <div class="error-msg">The API returned an error. Check that your environment variables are set correctly in Vercel.</div>
+    <div class="error-code" id="errorCode">—</div>
+    <button class="btn-ghost" style="width:100%;justify-content:center;" onclick="location.reload()">↻ Try again</button>
+  </div>
+</div>
+
+<!-- Topbar -->
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="logo"><div class="logo-mark">S</div>SpreadHome</div>
+    <nav class="nav-pill">
+      <a href="#">Overview</a>
+      <a href="#" class="active">Marketing</a>
+      <a href="#">Products</a>
+      <a href="#">Customers</a>
+    </nav>
+  </div>
+  <div class="topbar-right">
+    <div class="api-status">
+      <div class="api-dot" id="apiDot"></div>
+      <span id="apiLabel">Loading…</span>
+    </div>
+    <select class="filter-select" id="globalDays" onchange="reloadData()" style="font-size:13px;">
+      <option value="7">Last 7 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="60">Last 60 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+    <button class="btn-ghost" onclick="reloadData()">↻ Refresh</button>
+    <button class="btn-export" onclick="toggleExport()">↓ Export</button>
+  </div>
+</header>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+  <span class="filter-label">Filter</span>
+  <select class="filter-select" id="fChannel" onchange="applyFilters()">
+    <option value="">All channels</option>
+    <option value="Google">Google</option>
+    <option value="Meta">Meta</option>
+    <option value="Email">Email</option>
+    <option value="Organic">Organic</option>
+    <option value="Direct">Direct</option>
+  </select>
+  <select class="filter-select" id="fStatus" onchange="applyFilters()">
+    <option value="">All statuses</option>
+    <option value="paid">Paid</option>
+    <option value="pending">Pending</option>
+    <option value="refunded">Refunded</option>
+  </select>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:12px;color:var(--text3)">₹</span>
+    <input class="filter-input" type="number" id="fMin" placeholder="Min" oninput="applyFilters()">
+    <span style="font-size:12px;color:var(--text3)">–</span>
+    <input class="filter-input" type="number" id="fMax" placeholder="Max" oninput="applyFilters()">
+  </div>
+  <div class="filter-sep"></div>
+  <div class="filter-chips" id="filterChips"></div>
+  <div class="filter-spacer"></div>
+  <span class="filter-count" id="filterCount"></span>
+  <button class="btn-clear" onclick="clearFilters()">✕ Clear</button>
+</div>
+
+<!-- Export Drawer -->
+<div class="export-drawer" id="exportDrawer">
+  <div class="export-inner">
+    <div class="export-header">
+      <div class="export-title">📥 Export Data</div>
+      <button class="export-close" onclick="toggleExport()">×</button>
+    </div>
+    <div class="export-grid">
+      <div>
+        <div class="exp-label">1 · Dataset</div>
+        <div class="dataset-tabs">
+          <button class="dataset-tab active" data-ds="orders"    onclick="setDS('orders')">📋 Orders</button>
+          <button class="dataset-tab"         data-ds="marketing" onclick="setDS('marketing')">📊 Marketing</button>
+          <button class="dataset-tab"         data-ds="products"  onclick="setDS('products')">🛍️ Products</button>
+          <button class="dataset-tab"         data-ds="customers" onclick="setDS('customers')">👥 Customers</button>
+        </div>
+        <div class="exp-label" style="margin-top:14px;">2 · Columns</div>
+        <div class="col-picker" id="colPicker"></div>
+      </div>
+      <div>
+        <div class="exp-label">3 · Format</div>
+        <div class="format-tabs">
+          <button class="format-tab active" data-fmt="csv"  onclick="setFmt('csv')">CSV</button>
+          <button class="format-tab"         data-fmt="json" onclick="setFmt('json')">JSON</button>
+          <button class="format-tab"         data-fmt="xlsx" onclick="setFmt('xlsx')">XLSX</button>
+        </div>
+        <div class="fmt-detail" id="fmtDetail"></div>
+      </div>
+      <div>
+        <div class="exp-label">4 · Options</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;"><input type="checkbox" id="optHeader" checked style="accent-color:var(--green)"> Header row</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;"><input type="checkbox" id="optFiltered" checked style="accent-color:var(--green)"> Apply current filters</label>
+        </div>
+      </div>
+    </div>
+    <div class="export-footer">
+      <div class="export-preview" id="exportPreview"></div>
+      <div class="dl-ok" id="dlOk">✓ Downloaded!</div>
+      <button class="btn-dl-sec" onclick="doJsonCopy()">{ } Copy JSON</button>
+      <button class="btn-dl" onclick="doDownload()">↓ Download <span id="dlFmtLabel">CSV</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Main -->
+<main class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Marketing Dashboard</h1>
+      <p class="page-subtitle" id="pageSubtitle">Loading store data…</p>
+    </div>
+  </div>
+
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Total Revenue</div>
+      <div class="metric-value" id="metRevenue"><span class="skeleton" style="width:120px;height:28px;">&nbsp;</span></div>
+      <div class="metric-delta delta-up" id="metRevDelta" style="display:none"></div>
+    </div>
+    <div class="metric-card" style="--accent:#1a4e8c">
+      <div class="metric-label">Orders</div>
+      <div class="metric-value" id="metOrders"><span class="skeleton" style="width:80px;height:28px;">&nbsp;</span></div>
+      <div class="metric-sub" id="metAvg"></div>
+    </div>
+    <div class="metric-card" style="--accent:#5b3ea8">
+      <div class="metric-label">Avg Order Value</div>
+      <div class="metric-value" id="metAOV"><span class="skeleton" style="width:90px;height:28px;">&nbsp;</span></div>
+    </div>
+    <div class="metric-card" style="--accent:#b25f09">
+      <div class="metric-label">Customers</div>
+      <div class="metric-value" id="metCustomers"><span class="skeleton" style="width:70px;height:28px;">&nbsp;</span></div>
+    </div>
+    <div class="metric-card" style="--accent:#008060">
+      <div class="metric-label">Products</div>
+      <div class="metric-value" id="metProducts"><span class="skeleton" style="width:60px;height:28px;">&nbsp;</span></div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Revenue over time</span>
+        <span class="card-badge badge-live" id="revBadge">● Live</span>
+      </div>
+      <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Channel attribution</span>
+        <span class="card-badge badge-green">Last click</span>
+      </div>
+      <div class="channel-list" id="channelList"><div style="color:var(--text3);font-size:13px;padding:20px 0;">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="products-row">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Top products by revenue</span>
+        <span class="card-badge badge-live" id="prodBadge">● Live</span>
+      </div>
+      <div id="productsList"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Orders by status</span>
+        <span class="card-badge badge-green">/orders</span>
+      </div>
+      <div class="chart-wrap" style="height:200px;"><canvas id="statusChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-header">
+      <div class="table-header-left">
+        <span class="card-title">Orders</span>
+        <span class="card-badge badge-green" id="tableCount">—</span>
+      </div>
+      <span class="card-badge badge-live">● Live Shopify data</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th onclick="sortBy('id')">Order <span id="si-id"></span></th>
+        <th onclick="sortBy('customer')">Customer <span id="si-customer"></span></th>
+        <th onclick="sortBy('source')">Channel <span id="si-source"></span></th>
+        <th onclick="sortBy('amount')">Amount <span id="si-amount"></span></th>
+        <th onclick="sortBy('status')">Status <span id="si-status"></span></th>
+        <th onclick="sortBy('date')">Date <span id="si-date"></span></th>
+        <th>City</th>
+      </tr></thead>
+      <tbody id="ordersTable"><tr><td colspan="7" class="no-results">Loading orders…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+let RAW_DATA   = null;   // full API response
+let ALL_ORDERS = [];     // current dataset
+let sortKey    = 'date';
+let sortAsc    = false;
+
+const SRC_COLORS = {
+  Google:'#1a4e8c', Meta:'#5b3ea8', Email:'#b25f09',
+  Organic:'#008060', Direct:'#6b6965'
+};
+const fmt = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+
+// ═══════════════════════════════════════════════════
+//  LOAD DATA
+// ═══════════════════════════════════════════════════
+async function loadData(days) {
+  setLoading(true, 'Connecting to Shopify…', 20);
+  try {
+    setLoading(true, 'Fetching orders & products…', 50);
+    const res = await fetch(`/api/shopify?type=dashboard&days=${days}`);
+    setLoading(true, 'Building dashboard…', 85);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    RAW_DATA   = await res.json();
+    ALL_ORDERS = RAW_DATA.recent_orders || [];
+
+    setLoading(true, 'Done!', 100);
+    await sleep(300);
+
+    renderAll(RAW_DATA);
+    setLoading(false);
+    setApiStatus('live', `Live · ${RAW_DATA.meta.store} · ${new Date(RAW_DATA.meta.fetched_at).toLocaleTimeString()}`);
+  } catch (err) {
+    setLoading(false);
+    showError(err.message);
+    setApiStatus('error', 'Connection failed');
+  }
+}
+
+function reloadData() {
+  const days = document.getElementById('globalDays').value;
+  loadData(days);
+}
+
+// ═══════════════════════════════════════════════════
+//  RENDER ALL
+// ═══════════════════════════════════════════════════
+function renderAll(data) {
+  const s = data.summary;
+
+  // Subtitle
+  const days = data.meta.days;
+  document.getElementById('pageSubtitle').textContent =
+    `Attribution: Last click · Last ${days} days · ${data.meta.store}`;
+
+  // Metrics
+  document.getElementById('metRevenue').textContent  = fmt(s.total_revenue);
+  document.getElementById('metOrders').textContent   = s.total_orders.toLocaleString('en-IN');
+  document.getElementById('metAOV').textContent      = fmt(s.avg_order_value);
+  document.getElementById('metCustomers').textContent= s.total_customers.toLocaleString('en-IN');
+  document.getElementById('metProducts').textContent = s.total_products.toLocaleString('en-IN');
+  document.getElementById('metAvg').textContent      = `Avg. ${fmt(s.avg_order_value)}`;
+
+  // Revenue chart
+  renderRevenueChart(data.revenue_by_day);
+
+  // Channels
+  renderChannels(data.attribution);
+
+  // Products
+  renderProducts(data.top_products);
+
+  // Status donut
+  renderStatusChart(data.recent_orders);
+
+  // Orders table
+  applyFilters();
+
+  // Export preview
+  updateExportPreview();
+}
+
+// ═══════════════════════════════════════════════════
+//  CHARTS
+// ═══════════════════════════════════════════════════
+const isDark  = window.matchMedia('(prefers-color-scheme:dark)').matches;
+const gridCol = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+const textCol = '#9b9893';
+let revChart = null, statusChart = null;
+
+function renderRevenueChart(revByDay) {
+  const labels  = revByDay.map(d => d.date.slice(5));
+  const values  = revByDay.map(d => d.revenue);
+  if (revChart) revChart.destroy();
+  revChart = new Chart(document.getElementById('revenueChart').getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [{ label: 'Revenue', data: values,
+      borderColor: '#008060', backgroundColor: 'rgba(0,128,96,0.08)',
+      borderWidth: 2, pointRadius: 2, tension: 0.4, fill: true }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: { legend: { display: false },
+        tooltip: { backgroundColor: isDark?'#1c1c1a':'#fff', borderColor: isDark?'#2e2e2b':'#e2e0d8', borderWidth: 1,
+          titleColor: isDark?'#f0ede6':'#1a1917', bodyColor: textCol, padding: 10,
+          callbacks: { label: ctx => ' ' + fmt(ctx.parsed.y) } }},
+      scales: {
+        x: { grid: { color: gridCol }, ticks: { color: textCol, font: { size: 11 } } },
+        y: { grid: { color: gridCol }, ticks: { color: textCol, font: { size: 11 }, callback: v => fmt(v) } },
+      },
+    },
+  });
+}
+
+function renderStatusChart(orders) {
+  const counts = { paid: 0, pending: 0, refunded: 0, other: 0 };
+  orders.forEach(o => { const s = o.status?.toLowerCase(); counts[counts[s]!==undefined?s:'other']++; });
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(document.getElementById('statusChart').getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: ['Paid','Pending','Refunded','Other'],
+      datasets: [{ data: [counts.paid, counts.pending, counts.refunded, counts.other],
+        backgroundColor: ['#008060','#b25f09','#c0392b','#9b9893'], borderWidth: 0, spacing: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { color: textCol, font: { size: 12 }, padding: 12, boxWidth: 10, boxHeight: 10 } } },
+      cutout: '65%' },
+  });
+}
+
+function renderChannels(attribution) {
+  if (!attribution || !attribution.length) {
+    document.getElementById('channelList').innerHTML = '<div style="color:var(--text3);font-size:13px;">No attribution data for this period.</div>';
+    return;
+  }
+  const maxRev = Math.max(...attribution.map(a => a.revenue));
+  document.getElementById('channelList').innerHTML = attribution.map(a => {
+    const color = SRC_COLORS[a.source] || '#9b9893';
+    const pct   = maxRev ? ((a.revenue / maxRev) * 100).toFixed(1) : 0;
+    return `
+      <div class="channel-row">
+        <div class="channel-dot" style="background:${color}"></div>
+        <div class="channel-name">${a.source}</div>
+        <div class="channel-bar-wrap"><div class="channel-bar" style="width:${pct}%;background:${color}"></div></div>
+        <div class="channel-pct">${a.orders} orders</div>
+        <div class="channel-rev">${fmt(a.revenue)}</div>
+      </div>`;
+  }).join('');
+}
+
+const EMOJIS = ['🛏️','🌿','💤','🍽️','🧣','🪞','🛋️','🪴','🧺','🕯️'];
+function renderProducts(products) {
+  if (!products || !products.length) {
+    document.getElementById('productsList').innerHTML = '<div style="color:var(--text3);font-size:13px;padding:16px 0">No product data available.</div>';
+    return;
+  }
+  document.getElementById('productsList').innerHTML = products.slice(0,8).map((p, i) => `
+    <div class="product-row">
+      <div class="product-rank">${i+1}</div>
+      <div class="product-thumb">${EMOJIS[i % EMOJIS.length]}</div>
+      <div class="product-info">
+        <div class="product-name">${p.name}</div>
+        <div class="product-sku">${p.units} units sold</div>
+      </div>
+      <span class="product-rev">${fmt(p.revenue)}</span>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════
+//  FILTERS + TABLE
+// ═══════════════════════════════════════════════════
+function filteredOrders() {
+  const ch  = document.getElementById('fChannel').value;
+  const st  = document.getElementById('fStatus').value;
+  const min = parseFloat(document.getElementById('fMin').value) || 0;
+  const max = parseFloat(document.getElementById('fMax').value) || Infinity;
+
+  let rows = ALL_ORDERS.filter(o => {
+    if (ch && o.source !== ch)   return false;
+    if (st && o.status !== st)   return false;
+    if (o.amount < min || o.amount > max) return false;
+    return true;
+  });
+
+  if (sortKey) {
+    rows = [...rows].sort((a, b) => {
+      let va = a[sortKey], vb = b[sortKey];
+      if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+      return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+    });
+  }
+  return rows;
+}
+
+function applyFilters() {
+  const rows = filteredOrders();
+  renderTable(rows);
+  renderChips();
+  updateExportPreview();
+  document.getElementById('tableCount').textContent = rows.length + ' records';
+}
+
+function clearFilters() {
+  ['fChannel','fStatus'].forEach(id => document.getElementById(id).value = '');
+  ['fMin','fMax'].forEach(id => document.getElementById(id).value = '');
+  applyFilters();
+}
+
+function renderChips() {
+  const ch  = document.getElementById('fChannel');
+  const st  = document.getElementById('fStatus');
+  const min = document.getElementById('fMin').value;
+  const max = document.getElementById('fMax').value;
+  const chips = [];
+  if (ch.value) chips.push({ label: ch.options[ch.selectedIndex].text, clear: () => { ch.value=''; applyFilters(); } });
+  if (st.value) chips.push({ label: st.options[st.selectedIndex].text, clear: () => { st.value=''; applyFilters(); } });
+  if (min) chips.push({ label: 'Min ₹'+Number(min).toLocaleString('en-IN'), clear: () => { document.getElementById('fMin').value=''; applyFilters(); } });
+  if (max) chips.push({ label: 'Max ₹'+Number(max).toLocaleString('en-IN'), clear: () => { document.getElementById('fMax').value=''; applyFilters(); } });
+  document.getElementById('filterChips').innerHTML = chips.map((c,i) =>
+    `<div class="chip">${c.label}<span class="chip-x" onclick="clearChip(${i})">×</span></div>`
+  ).join('');
+  window._chipClears = chips.map(c => c.clear);
+  const total = filteredOrders().length;
+  document.getElementById('filterCount').textContent = total < ALL_ORDERS.length ? `${total} of ${ALL_ORDERS.length}` : '';
+}
+function clearChip(i) { window._chipClears[i](); }
+
+const STATUS_CLASS = { paid:'status-paid', pending:'status-pending', refunded:'status-refunded', refund:'status-refund' };
+function renderTable(rows) {
+  if (!rows.length) {
+    document.getElementById('ordersTable').innerHTML = `<tr><td colspan="7" class="no-results">No orders match the current filters.</td></tr>`;
+    return;
+  }
+  document.getElementById('ordersTable').innerHTML = rows.map(o => `
+    <tr>
+      <td><span class="order-id">${o.id}</span></td>
+      <td>${o.customer}</td>
+      <td><span class="order-source" style="background:${SRC_COLORS[o.source]||'#88807820'}20;color:${SRC_COLORS[o.source]||'#6b6965'}">${o.source||'—'}</span></td>
+      <td><span class="amount">${fmt(o.amount)}</span></td>
+      <td><span class="status-pill ${STATUS_CLASS[o.status?.toLowerCase()]||''}">${o.status||'—'}</span></td>
+      <td style="color:var(--text2);font-size:12px">${o.date ? o.date.slice(0,10) : '—'}</td>
+      <td style="color:var(--text3);font-size:12px">${o.city||'—'}</td>
+    </tr>`).join('');
+}
+
+function sortBy(key) {
+  if (sortKey === key) sortAsc = !sortAsc; else { sortKey = key; sortAsc = true; }
+  document.querySelectorAll('[id^=si-]').forEach(el => el.textContent = '');
+  const el = document.getElementById('si-' + key);
+  if (el) el.textContent = sortAsc ? ' ↑' : ' ↓';
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════════
+const DS_CONFIG = {
+  orders:    { label:'Orders',    cols:[{k:'id',l:'Order ID',d:1},{k:'customer',l:'Customer',d:1},{k:'email',l:'Email',d:0},{k:'source',l:'Channel',d:1},{k:'amount',l:'Amount',d:1},{k:'status',l:'Status',d:1},{k:'date',l:'Date',d:1},{k:'city',l:'City',d:0}] },
+  marketing: { label:'Marketing', cols:[{k:'source',l:'Channel',d:1},{k:'orders',l:'Orders',d:1},{k:'revenue',l:'Revenue',d:1}] },
+  products:  { label:'Products',  cols:[{k:'name',l:'Product',d:1},{k:'units',l:'Units',d:1},{k:'revenue',l:'Revenue',d:1}] },
+  customers: { label:'Customers', cols:[{k:'name',l:'Name',d:1},{k:'email',l:'Email',d:1},{k:'orders_count',l:'Orders',d:1},{k:'total_spent',l:'Spent',d:1},{k:'city',l:'City',d:0},{k:'joined',l:'Joined',d:0}] },
+};
+const FMT_DETAILS = {
+  csv:  'Comma-separated. Opens directly in Excel, Google Sheets, or any BI tool.',
+  json: 'Structured JSON array — ideal for databases or developer imports.',
+  xlsx: 'Formatted Excel workbook with bold headers and auto column widths.',
+};
+let currentDS = 'orders', currentFmt = 'csv';
+
+function setDS(ds) {
+  currentDS = ds;
+  document.querySelectorAll('.dataset-tab').forEach(t => t.classList.toggle('active', t.dataset.ds === ds));
+  renderColPicker();
+  updateExportPreview();
+}
+function setFmt(fmt) {
+  currentFmt = fmt;
+  document.querySelectorAll('.format-tab').forEach(t => t.classList.toggle('active', t.dataset.fmt === fmt));
+  document.getElementById('dlFmtLabel').textContent = fmt.toUpperCase();
+  document.getElementById('fmtDetail').textContent  = FMT_DETAILS[fmt];
+  updateExportPreview();
+}
+function renderColPicker() {
+  DS_CONFIG[currentDS].cols.forEach(c => { if (c._on === undefined) c._on = !!c.d; });
+  document.getElementById('colPicker').innerHTML = DS_CONFIG[currentDS].cols.map(c =>
+    `<div class="col-pill ${c._on?'checked':''}" onclick="toggleCol('${c.k}',this)">
+      <span>${c._on?'✓':'+'}</span>${c.l}
+    </div>`).join('');
+}
+function toggleCol(key, el) {
+  const col = DS_CONFIG[currentDS].cols.find(c => c.k === key);
+  if (!col) return;
+  col._on = !col._on;
+  el.classList.toggle('checked', col._on);
+  el.querySelector('span').textContent = col._on ? '✓' : '+';
+  updateExportPreview();
+}
+function getEnabledCols() { return DS_CONFIG[currentDS].cols.filter(c => c._on !== false && c._on !== undefined ? (c.d || c._on) : false); }
+function getExportRows() {
+  if (!RAW_DATA) return [];
+  const applyF = document.getElementById('optFiltered')?.checked;
+  if (currentDS === 'orders')    return applyF ? filteredOrders() : ALL_ORDERS;
+  if (currentDS === 'marketing') return RAW_DATA.attribution || [];
+  if (currentDS === 'products')  return RAW_DATA.top_products || [];
+  if (currentDS === 'customers') return RAW_DATA.customers || [];
+  return [];
+}
+function updateExportPreview() {
+  const rows = getExportRows();
+  const cols = getEnabledCols();
+  document.getElementById('exportPreview').innerHTML =
+    RAW_DATA ? `<strong>${rows.length} records</strong> · ${cols.length} columns · ${currentFmt.toUpperCase()}` : 'Load data first';
+}
+function toggleExport() {
+  document.getElementById('exportDrawer').classList.toggle('open');
+  updateExportPreview();
+}
+function doDownload() {
+  const rows = getExportRows(), cols = getEnabledCols();
+  const header = document.getElementById('optHeader')?.checked;
+  const date   = new Date().toISOString().slice(0,10);
+  const fname  = `spreadhome_${currentDS}_${date}`;
+  if (currentFmt === 'csv') {
+    const lines = [];
+    if (header) lines.push(cols.map(c => '"'+c.l+'"').join(','));
+    rows.forEach(r => lines.push(cols.map(c => { const v = r[c.k] ?? ''; return typeof v==='string'&&v.includes(',')?'"'+v+'"':v; }).join(',')));
+    trigger(lines.join('\n'), fname+'.csv', 'text/csv');
+  } else if (currentFmt === 'json') {
+    trigger(JSON.stringify(rows.map(r => Object.fromEntries(cols.map(c=>[c.k,r[c.k]??'']))),null,2), fname+'.json', 'application/json');
+  } else {
+    const aoa = [];
+    if (header) aoa.push(cols.map(c=>c.l));
+    rows.forEach(r => aoa.push(cols.map(c=>r[c.k]??'')));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = cols.map(()=>({wch:18}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SpreadHome');
+    XLSX.writeFile(wb, fname+'.xlsx');
+  }
+  flashOk();
+}
+function doJsonCopy() {
+  const rows = getExportRows(), cols = getEnabledCols();
+  const data = rows.map(r=>Object.fromEntries(cols.map(c=>[c.k,r[c.k]??''])));
+  navigator.clipboard.writeText(JSON.stringify(data,null,2)).then(flashOk).catch(()=>{trigger(JSON.stringify(data,null,2),'data.json','application/json');flashOk();});
+}
+function trigger(content, name, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content],{type:mime}));
+  a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+function flashOk() {
+  const el = document.getElementById('dlOk');
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════
+function setLoading(on, text, pct) {
+  const s = document.getElementById('loadingScreen');
+  if (on) {
+    s.classList.remove('hidden');
+    document.getElementById('loadingText').textContent = text || 'Loading…';
+    document.getElementById('loadingFill').style.width = (pct||0) + '%';
+  } else {
+    s.classList.add('hidden');
+  }
+}
+function showError(msg) {
+  document.getElementById('errorScreen').style.display = 'flex';
+  document.getElementById('errorCode').textContent = msg;
+}
+function setApiStatus(state, label) {
+  const dot = document.getElementById('apiDot');
+  dot.className = 'api-dot' + (state==='live' ? ' live' : state==='error' ? ' error' : '');
+  document.getElementById('apiLabel').textContent = label;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
+setDS('orders');
+setFmt('csv');
+loadData(30);
+</script>
+</body>
+</html>
